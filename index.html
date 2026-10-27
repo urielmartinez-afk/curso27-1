@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portal de Consulta de Calificaciones Parciales</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- PapaParse for CSV parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #printable-receipt, #printable-receipt * {
+        visibility: visible;
+      }
+      #printable-receipt {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        padding: 20px;
+        background: white !important;
+        color: black !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col antialiased">
+  <div id="root" class="flex-grow flex flex-col"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    // --- SVGs for Icons ---
+    const SearchIcon = () => (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+    );
+
+    const UserCheckIcon = () => (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      </svg>
+    );
+
+    const LockIcon = () => (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+      </svg>
+    );
+
+    const PrintIcon = () => (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H7a2 2 0 00-2 2v4h10z" />
+      </svg>
+    );
+
+    const ChevronDownIcon = ({ open }) => (
+      <svg className={`w-5 h-5 transform transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+      </svg>
+    );
+
+    const DownloadIcon = () => (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+      </svg>
+    );
+
+    const UploadIcon = () => (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+      </svg>
+    );
+
+    const BookOpenIcon = () => (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+      </svg>
+    );
+
+    const CheckCircleIcon = () => (
+      <svg className="w-5 h-5 text-emerald-500 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    );
+
+    // --- SEED DEMO DATA ---
+    const INITIAL_STUDENTS = [
+      {
+        id: "DER-001",
+        matricula: "20240101",
+        nombre: "Sofía Elena Rodríguez Morales",
+        correo: "sofia.rodriguez@alumnos.edu.mx",
+        carrera: "derecho_admin",
+        parcial1: {
+          examen: {
+            sec1: { r1: 0.5, r2: 0.5, r3: 0.5, r4: 0.5 }, // Max 2.0
+            sec2: 2.0,                                   // Max 2.0
+            sec3: { caso1: 1.0, caso2: 1.0, caso3: 0.8 }, // Max 3.0
+            sec4: { a: 1.5, b: 1.0 }                     // Max 2.5
+          },
+          proyecto: 9.5, // 0-10 (40%)
+          extra: 0.5     // 0-0.5 (5%)
+        },
+        parcial2: {
+          examen: 9.0,   // 0-10 (60%)
+          proyecto: 9.0, // 0-10 (40%)
+          extra: 0.3
+        }
+      },
+      {
+        id: "DER-002",
+        matricula: "20240102",
+        nombre: "Alejandro Gómez Garza",
+        correo: "alejandro.gomez@alumnos.edu.mx",
+        carrera: "derecho_admin",
+        parcial1: {
+          examen: {
+            sec1: { r1: 0.5, r2: 0.25, r3: 0.5, r4: 0.0 },
+            sec2: 1.5,
+            sec3: { caso1: 0.8, caso2: 0.5, caso3: 0.7 },
+            sec4: { a: 1.0, b: 0.5 }
+          },
+          proyecto: 8.0,
+          extra: 0.2
+        },
+        parcial2: {
+          examen: 7.5,
+          proyecto: 8.5,
+          extra: 0.0
+        }
+      },
+      {
+        id: "PSI-001",
+        matricula: "20240201",
+        nombre: "Carlos Eduardo Mendoza Silva",
+        correo: "carlos.mendoza@alumnos.edu.mx",
+        carrera: "psicologia_ind",
+        parcial1: {
+          examen: {
+            sec1: { r1: 1.0 },                                         // 1.0
+            sec2: { r1: 0.5, r2: 0.5, r3: 0.5, r4: 0.5, r5: 0.5, r6: 0.5 }, // 3.0
+            sec3: { r1: 1.5 },                                         // 1.5
+            sec4: { r1: 1.5 },                                         // 1.5
+            sec5: { r1: 1.0, r2: 1.0, r3: 1.0 }                          // 3.0
+          },
+          proyecto: { c1: 3.2, c2: 3.3, c3: 3.0 }, // Total 9.5 / 10
+          extra: 0.5
+        },
+        parcial2: {
+          examen: 8.5,
+          proyecto: 9.0,
+          extra: 0.5
+        }
+      },
+      {
+        id: "PSI-002",
+        matricula: "20240202",
+        nombre: "Mariana Torres Hernández",
+        correo: "mariana.torres@alumnos.edu.mx",
+        carrera: "psicologia_ind",
+        parcial1: {
+          examen: {
+            sec1: { r1: 0.8 },
+            sec2: { r1: 0.4, r2: 0.5, r3: 0.3, r4: 0.5, r5: 0.4, r6: 0.5 },
+            sec3: { r1: 1.2 },
+            sec4: { r1: 1.0 },
+            sec5: { r1: 0.8, r2: 0.9, r3: 0.7 }
+          },
+          proyecto: { c1: 2.5, c2: 2.8, c3: 2.7 }, // Total 8.0 / 10
+          extra: 0.0
+        },
+        parcial2: {
+          examen: 7.0,
+          proyecto: 8.0,
+          extra: 0.2
+        }
+      }
+    ];
+
+    // --- HELPER CALCULATIONS ---
+    function calculateExamen1Derecho(examenObj) {
+      if (!examenObj) return 0;
+      if (typeof examenObj === 'number') return examenObj;
+      const s1 = Object.values(examenObj.sec1 || {}).reduce((a, b) => Number(a) + Number(b), 0);
+      const s2 = Number(examenObj.sec2 || 0);
+      const s3 = Object.values(examenObj.sec3 || {}).reduce((a, b) => Number(a) + Number(b), 0);
+      const s4 = Object.values(examenObj.sec4 || {}).reduce((a, b) => Number(a) + Number(b), 0);
+      return Math.min(10, s1 + s2 + s3 + s4);
+    }
+
+    function calculateExamen1Psicologia(examenObj) {
+      if (!examenObj) return 0;
+      if (typeof examenObj === 'number') return examenObj;
+      const s1 = Object.values(examenObj.sec1 || {}).reduce((a, b) => Number(a) + Number(b), 0);
+      const s2 = Object.values(examenObj.sec2 || {}).reduce((a, b) => Number(a) + Number(b), 0);
+      const s3 = Object.values(examenObj.sec3 || {}).reduce((a, b) => Number(a) + Number(b), 0);
+      const s4 = Object.values(examenObj.sec4 || {}).reduce((a, b) => Number(a) + Number(b), 0);
+      const s5 = Object.values(examenObj.sec5 || {}).reduce((a, b) => Number(a) + Number(b), 0);
+      return Math.min(10, s1 + s2 + s3 + s4 + s5);
+    }
+
+    function calculateProyecto1Psicologia(projObj) {
+      if (!projObj) return 0;
+      if (typeof projObj === 'number') return projObj;
+      return Object.values(projObj).reduce((a, b) => Number(a) + Number(b), 0);
+    }
+
+    function calculateParcial1(student) {
+      if (!student || !student.parcial1) return 0;
+      let scoreExamen = 0;
+      let scoreProyecto = 0;
+
+      if (student.carrera === 'derecho_admin') {
+        scoreExamen = calculateExamen1Derecho(student.parcial1.examen);
+        scoreProyecto = Number(student.parcial1.proyecto || 0);
+      } else {
+        scoreExamen = calculateExamen1Psicologia(student.parcial1.examen);
+        scoreProyecto = calculateProyecto1Psicologia(student.parcial1.proyecto);
+      }
+
+      const extra = Number(student.parcial1.extra || 0);
+      const total = (scoreExamen * 0.60) + (scoreProyecto * 0.40) + extra;
+      return Math.min(10, Math.round(total * 100) / 100);
+    }
+
+    function calculateParcial2(student) {
+      if (!student || !student.parcial2) return 0;
+      const examen = Number(student.parcial2.examen || 0);
+      const proyecto = Number(student.parcial2.proyecto || 0);
+      const extra = Number(student.parcial2.extra || 0);
+      const total = (examen * 0.60) + (proyecto * 0.40) + extra;
+      return Math.min(10, Math.round(total * 100) / 100);
+    }
+
+    function calculatePromedioGlobal(student) {
+      const p1 = calculateParcial1(student);
+      const p2 = calculateParcial2(student);
+      return Math.round(((p1 + p2) / 2) * 100) / 100;
+    }
+
+    // --- MAIN APP COMPONENT ---
+    function App() {
+      const [students, setStudents] = useState(() => {
+        const saved = localStorage.getItem('university_students_grades');
+        return saved ? JSON.parse(saved) : INITIAL_STUDENTS;
+      });
+
+      const [searchQuery, setSearchQuery] = useState('');
+      const [activeStudent, setActiveStudent] = useState(null);
+      const [hasSearched, setHasSearched] = useState(false);
+      
+      // Admin state
+      const [isAdmin, setIsAdmin] = useState(false);
+      const [showAdminPassModal, setShowAdminPassModal] = useState(false);
+      const [passInput, setPassInput] = useState('');
+      const [passError, setPassError] = useState('');
+      const [adminTab, setAdminTab] = useState('list'); // 'list', 'add', 'import'
+
+      // Save to localStorage
+      useEffect(() => {
+        localStorage.setItem('university_students_grades', JSON.stringify(students));
+      }, [students]);
+
+      // Search function
+      const handleSearch = (e) => {
+        if (e) e.preventDefault();
+        const query = searchQuery.trim().toLowerCase();
+        if (!query) return;
+
+        const found = students.find(s => 
+          s.matricula.toLowerCase() === query || 
+          s.correo.toLowerCase() === query
+        );
+
+        setActiveStudent(found || null);
+        setHasSearched(true);
+      };
+
+      const handleClearSearch = () => {
+        setSearchQuery('');
+        setActiveStudent(null);
+        setHasSearched(false);
+      };
+
+      const handleUnlockAdmin = (e) => {
+        e.preventDefault();
+        if (passInput === '1234' || passInput === 'admin') {
+          setIsAdmin(true);
+          setShowAdminPassModal(false);
+          setPassInput('');
+          setPassError('');
+        } else {
+          setPassError('Contraseña incorrecta. (Prueba con: 1234)');
+        }
+      };
+
+      const handlePrint = () => {
+        window.print();
+      };
+
+      return (
+        <div className="flex-grow flex flex-col">
+          {/* HEADER BAR */}
+          <header className="bg-indigo-950 text-white shadow-lg no-print">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 bg-indigo-800 rounded-xl text-indigo-200">
+                  <BookOpenIcon />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold tracking-tight text-white">Portal de Consulta de Calificaciones</h1>
+                  <p className="text-xs text-indigo-300">Evaluaciones Parciales — Pre-Actas Finales</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {isAdmin ? (
+                  <div className="flex items-center gap-2">
+                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs px-3 py-1 rounded-full font-medium flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Modo Docente Activo
+                    </span>
+                    <button 
+                      onClick={() => setIsAdmin(false)}
+                      className="text-xs text-slate-300 hover:text-white underline px-2 py-1"
+                    >
+                      Salir
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowAdminPassModal(true)}
+                    className="flex items-center gap-2 text-xs bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/60 px-3.5 py-2 rounded-lg transition"
+                  >
+                    <LockIcon />
+                    Acceso Docente / Cargar Datos
+                  </button>
+                )}
+              </div>
+            </div>
+          </header>
+
+          {/* MAIN CONTAINER */}
+          <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            
+            {/* VIEW SWITCHER: ADMIN OR STUDENT PORTAL */}
+            {isAdmin ? (
+              <AdminDashboard 
+                students={students} 
+                setStudents={setStudents} 
+                adminTab={adminTab} 
+                setAdminTab={setAdminTab} 
+              />
+            ) : (
+              <div className="space-y-8">
+                {/* SEARCH HERO PANEL */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 no-print">
+                  <div className="max-w-2xl mx-auto text-center space-y-4">
+                    <div className="inline-flex items-center justify-center p-3 bg-indigo-50 text-indigo-700 rounded-2xl mb-1">
+                      <UserCheckIcon />
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-900">Consulta Individual de Notas</h2>
+                    <p className="text-sm text-slate-600 leading-relaxed">
+                      Por motivos de privacidad y protección de datos, ingresa tu <strong className="text-slate-800">Matrícula</strong> o <strong className="text-slate-800">Correo Institucional</strong> para visualizar exclusivamente tus parciales antes de la firma de actas.
+                    </p>
+
+                    <form onSubmit={handleSearch} className="mt-6 flex flex-col sm:flex-row gap-2">
+                      <div className="relative flex-grow">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                          <SearchIcon />
+                        </div>
+                        <input
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Ej. 20240101 o sofia.rodriguez@alumnos.edu.mx"
+                          className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white text-sm transition"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-xl transition shadow-md shadow-indigo-200 flex items-center justify-center gap-2"
+                      >
+                        <SearchIcon />
+                        Consultar
+                      </button>
+                    </form>
+
+                    <div className="pt-2 flex items-center justify-center gap-2 text-xs text-slate-500">
+                      <LockIcon />
+                      <span>Tus datos sólo se muestran en tu pantalla. Ningún alumno puede ver las notas de otros.</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SEARCH RESULTS DISPLAY */}
+                {hasSearched && (
+                  <div>
+                    {activeStudent ? (
+                      <StudentGradeDetails 
+                        student={activeStudent} 
+                        onPrint={handlePrint} 
+                        onClear={handleClearSearch} 
+                      />
+                    ) : (
+                      <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl p-6 text-center space-y-3 max-w-xl mx-auto no-print">
+                        <div className="text-xl">🔍</div>
+                        <h3 className="font-semibold text-lg">No se encontraron registros</h3>
+                        <p className="text-sm text-amber-700">
+                          No hallamos ninguna evaluación asignada a "<strong>{searchQuery}</strong>". Verifica que tu matrícula o correo estén bien escritos o contacta a tu profesor/a.
+                        </p>
+                        <button 
+                          onClick={handleClearSearch}
+                          className="text-xs bg-amber-200/80 hover:bg-amber-200 text-amber-900 px-4 py-2 rounded-lg font-medium transition"
+                        >
+                          Intentar con otra búsqueda
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+          </main>
+
+          {/* ADMIN PASSCODE MODAL */}
+          {showAdminPassModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <LockIcon />
+                    Acceso para Docentes
+                  </h3>
+                  <button 
+                    onClick={() => setShowAdminPassModal(false)}
+                    className="text-slate-400 hover:text-slate-600 text-lg"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="text-xs text-slate-600 mb-4">
+                  Ingresa la clave de administración para modificar notas, cargar listas de Excel/CSV o descargar plantillas. <br/>
+                  <span className="text-indigo-600 font-mono">(Clave por defecto: 1234)</span>
+                </p>
+
+                <form onSubmit={handleUnlockAdmin} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Contraseña</label>
+                    <input
+                      type="password"
+                      value={passInput}
+                      onChange={(e) => setPassInput(e.target.value)}
+                      placeholder="Ingresa la clave..."
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-600 focus:outline-none"
+                      autoFocus
+                    />
+                    {passError && <p className="text-xs text-rose-600 mt-1">{passError}</p>}
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminPassModal(false)}
+                      className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow transition"
+                    >
+                      Ingresar
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* FOOTER */}
+          <footer className="bg-white border-t border-slate-200 mt-auto py-6 no-print">
+            <div className="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500">
+              <p>Sistema de Consulta de Calificaciones Parciales © {new Date().getFullYear()} — Uso Académico Universitario</p>
+            </div>
+          </footer>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // STUDENT DETAILED VIEW COMPONENT
+    // =========================================================================
+    function StudentGradeDetails({ student, onPrint, onClear }) {
+      const p1Score = calculateParcial1(student);
+      const p2Score = calculateParcial2(student);
+      const globalScore = calculatePromedioGlobal(student);
+
+      const isPassing = globalScore >= 6.0;
+      const careerTitle = student.carrera === 'derecho_admin' 
+        ? 'Derecho y Administración' 
+        : 'Psicología Industrial';
+
+      // State for accordions
+      const [openAccordionP1, setOpenAccordionP1] = useState(true);
+
+      return (
+        <div className="space-y-6">
+          {/* ACTION & SUMMARY BAR */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 no-print">
+            <button
+              onClick={onClear}
+              className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1 bg-indigo-50 px-3 py-1.5 rounded-lg transition"
+            >
+              ← Realizar otra búsqueda
+            </button>
+
+            <button
+              onClick={onPrint}
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-medium flex items-center gap-2 shadow-sm transition"
+            >
+              <PrintIcon />
+              Imprimir / Descargar Ficha Oficial
+            </button>
+          </div>
+
+          {/* PRINTABLE CONTAINER (This stays visible on print) */}
+          <div id="printable-receipt" className="space-y-6">
+            
+            {/* OFFICIAL HEADER FOR PRINTING */}
+            <div className="hidden print:block border-b border-slate-300 pb-4 mb-4 text-center">
+              <h1 className="text-xl font-bold uppercase tracking-wide">Universidad - Ficha Oficial de Evaluación Parcial</h1>
+              <p className="text-xs text-slate-600">Revisión previa a la firma formal de Actas de Calificaciones Finales</p>
+              <p className="text-xs text-slate-500 mt-1">Fecha de consulta: {new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+            </div>
+
+            {/* STUDENT IDENTITY CARD */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                    {careerTitle}
+                  </span>
+                  <span className="text-xs text-slate-500">Matrícula: <strong className="text-slate-800">{student.matricula}</strong></span>
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900">{student.nombre}</h2>
+                <p className="text-xs text-slate-500">{student.correo}</p>
+              </div>
+
+              {/* GLOBAL AVERAGE KPI BADGE */}
+              <div className="w-full md:w-auto flex md:flex-col justify-between items-center md:items-end bg-slate-50 md:bg-transparent p-4 md:p-0 rounded-xl border md:border-none border-slate-200">
+                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Promedio Global</span>
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-3xl font-extrabold ${isPassing ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {globalScore.toFixed(2)}
+                  </span>
+                  <span className="text-xs text-slate-400">/ 10</span>
+                </div>
+                <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold mt-1 ${
+                  isPassing ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                }`}>
+                  {isPassing ? 'Aprobado' : 'Aprobación Pendiente'}
+                </span>
+              </div>
+            </div>
+
+            {/* PARCIAL 1 AND PARCIAL 2 OVERVIEW CARDS */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* PARCIAL 1 SUMMARY CARD */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-lg">Parcial 1</h3>
+                    <p className="text-xs text-slate-500">(Examen 60% + Proyecto 40% + Extra 5%)</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-2xl font-extrabold text-indigo-900">{p1Score.toFixed(2)}</span>
+                    <span className="text-xs text-slate-400"> /10</span>
+                  </div>
+                </div>
+
+                {/* BREAKDOWN OF PARCIAL 1 COMPONENTS */}
+                <div className="space-y-2 text-xs">
+                  {student.carrera === 'derecho_admin' ? (
+                    <>
+                      <div className="flex justify-between items-center py-1 bg-slate-50 px-2.5 rounded-lg">
+                        <span className="font-medium text-slate-700">Examen 1 (60% máx):</span>
+                        <span className="font-semibold text-slate-900">
+                          {calculateExamen1Derecho(student.parcial1.examen).toFixed(2)} pts 
+                          <span className="text-slate-400 ml-1">({(calculateExamen1Derecho(student.parcial1.examen) * 0.6).toFixed(2)} pts efec.)</span>
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-1 bg-slate-50 px-2.5 rounded-lg">
+                        <span className="font-medium text-slate-700">Proyecto Final 1 (40% máx):</span>
+                        <span className="font-semibold text-slate-900">
+                          {Number(student.parcial1.proyecto || 0).toFixed(2)} pts 
+                          <span className="text-slate-400 ml-1">({(Number(student.parcial1.proyecto || 0) * 0.4).toFixed(2)} pts efec.)</span>
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-center py-1 bg-slate-50 px-2.5 rounded-lg">
+                        <span className="font-medium text-slate-700">Examen 1 (60% máx):</span>
+                        <span className="font-semibold text-slate-900">
+                          {calculateExamen1Psicologia(student.parcial1.examen).toFixed(2)} pts 
+                          <span className="text-slate-400 ml-1">({(calculateExamen1Psicologia(student.parcial1.examen) * 0.6).toFixed(2)} pts efec.)</span>
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-1 bg-slate-50 px-2.5 rounded-lg">
+                        <span className="font-medium text-slate-700">Proyecto Final 1 (40% máx):</span>
+                        <span className="font-semibold text-slate-900">
+                          {calculateProyecto1Psicologia(student.parcial1.proyecto).toFixed(2)} pts 
+                          <span className="text-slate-400 ml-1">({(calculateProyecto1Psicologia(student.parcial1.proyecto) * 0.4).toFixed(2)} pts efec.)</span>
+                        </span>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="flex justify-between items-center py-1 bg-amber-50/70 text-amber-900 px-2.5 rounded-lg border border-amber-200/50">
+                    <span className="font-medium">Puntos Extra (5% máx):</span>
+                    <span className="font-bold">+{Number(student.parcial1.extra || 0).toFixed(2)} pts</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* PARCIAL 2 SUMMARY CARD */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-lg">Parcial 2</h3>
+                    <p className="text-xs text-slate-500">(Examen 60% + Proyecto 40% + Extra 5%)</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-2xl font-extrabold text-indigo-900">{p2Score.toFixed(2)}</span>
+                    <span className="text-xs text-slate-400"> /10</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between items-center py-1 bg-slate-50 px-2.5 rounded-lg">
+                    <span className="font-medium text-slate-700">Examen 2 (60% máx):</span>
+                    <span className="font-semibold text-slate-900">
+                      {Number(student.parcial2?.examen || 0).toFixed(2)} pts 
+                      <span className="text-slate-400 ml-1">({(Number(student.parcial2?.examen || 0) * 0.6).toFixed(2)} pts efec.)</span>
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between items-center py-1 bg-slate-50 px-2.5 rounded-lg">
+                    <span className="font-medium text-slate-700">Proyecto Final 2 (40% máx):</span>
+                    <span className="font-semibold text-slate-900">
+                      {Number(student.parcial2?.proyecto || 0).toFixed(2)} pts 
+                      <span className="text-slate-400 ml-1">({(Number(student.parcial2?.proyecto || 0) * 0.4).toFixed(2)} pts efec.)</span>
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between items-center py-1 bg-amber-50/70 text-amber-900 px-2.5 rounded-lg border border-amber-200/50">
+                    <span className="font-medium">Puntos Extra (5% máx):</span>
+                    <span className="font-bold">+{Number(student.parcial2?.extra || 0).toFixed(2)} pts</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* ACCORDION: DEEP ITEM-BY-ITEM BREAKDOWN */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <button
+                onClick={() => setOpenAccordionP1(!openAccordionP1)}
+                className="w-full px-6 py-4 flex justify-between items-center bg-slate-50 hover:bg-slate-100/80 transition text-left no-print"
+              >
+                <div>
+                  <h4 className="font-bold text-slate-900 text-sm">
+                    🔍 Desglose Detallado por Reactivos y Criterios (Parcial 1)
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Haz clic para {openAccordionP1 ? 'ocultar' : 'desplegar'} el detalle de cada pregunta y caso del Examen 1
+                  </p>
+                </div>
+                <ChevronDownIcon open={openAccordionP1} />
+              </button>
+
+              {/* Title when printed */}
+              <div className="hidden print:block px-6 pt-4 font-bold text-sm text-slate-900 border-t border-slate-200">
+                Desglose Detallado de Examen y Proyecto Parcial 1
+              </div>
+
+              {(openAccordionP1 || typeof window !== 'undefined' && window.matchMedia('print').matches) && (
+                <div className="p-6 border-t border-slate-200/80 space-y-6">
+                  
+                  {student.carrera === 'derecho_admin' ? (
+                    <DerechoBreakdown examen={student.parcial1.examen} />
+                  ) : (
+                    <PsicologiaBreakdown 
+                      examen={student.parcial1.examen} 
+                      proyecto={student.parcial1.proyecto} 
+                    />
+                  )}
+
+                </div>
+              )}
+            </div>
+
+            {/* PRINT SIGNATURE BLOCK */}
+            <div className="hidden print:block pt-16 mt-12 border-t border-slate-300">
+              <div className="grid grid-cols-2 gap-12 text-center text-xs">
+                <div className="space-y-12">
+                  <div className="border-b border-slate-400 w-3/4 mx-auto"></div>
+                  <div>
+                    <p className="font-bold text-slate-800">{student.nombre}</p>
+                    <p className="text-slate-500">Firma de Conformidad del Alumno/a</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Matrícula: {student.matricula}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-12">
+                  <div className="border-b border-slate-400 w-3/4 mx-auto"></div>
+                  <div>
+                    <p className="font-bold text-slate-800">Firma del Docente Titular</p>
+                    <p className="text-slate-500">Asignatura de {careerTitle}</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Acta de Calificaciones Parciales</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // DERECHO & ADMINISTRACION BREAKDOWN
+    // =========================================================================
+    function DerechoBreakdown({ examen }) {
+      if (!examen) return null;
+      const sec1 = examen.sec1 || {};
+      const sec2 = examen.sec2 || 0;
+      const sec3 = examen.sec3 || {};
+      const sec4 = examen.sec4 || {};
+
+      return (
+        <div className="space-y-4">
+          <h5 className="text-xs font-bold uppercase tracking-wider text-indigo-900 border-b border-slate-100 pb-2">
+            Examen 1 — Desglose Derecho y Administración (Total: 60%)
+          </h5>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            {/* SECCION I */}
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2">
+              <div className="flex justify-between font-semibold text-slate-800">
+                <span>Sección I (Reactivos 1 - 4)</span>
+                <span>Max: 2.0 pts</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-slate-600">
+                <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                  <span>Reactivo 1:</span> <strong className="text-slate-900">{sec1.r1 ?? 0}</strong>
+                </div>
+                <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                  <span>Reactivo 2:</span> <strong className="text-slate-900">{sec1.r2 ?? 0}</strong>
+                </div>
+                <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                  <span>Reactivo 3:</span> <strong className="text-slate-900">{sec1.r3 ?? 0}</strong>
+                </div>
+                <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                  <span>Reactivo 4:</span> <strong className="text-slate-900">{sec1.r4 ?? 0}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* SECCION II */}
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2">
+              <div className="flex justify-between font-semibold text-slate-800">
+                <span>Sección II (Pregunta General)</span>
+                <span>Max: 2.0 pts</span>
+              </div>
+              <div className="bg-white p-2.5 rounded border border-slate-200 flex justify-between items-center">
+                <span className="text-slate-600">Puntaje obtenido:</span>
+                <strong className="text-slate-900 text-sm">{sec2} pts</strong>
+              </div>
+            </div>
+
+            {/* SECCION III */}
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2">
+              <div className="flex justify-between font-semibold text-slate-800">
+                <span>Sección III (Análisis de Casos)</span>
+                <span>Max: 3.0 pts</span>
+              </div>
+              <div className="space-y-1.5 text-slate-600">
+                <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                  <span>Caso 1:</span> <strong className="text-slate-900">{sec3.caso1 ?? 0} pts</strong>
+                </div>
+                <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                  <span>Caso 2:</span> <strong className="text-slate-900">{sec3.caso2 ?? 0} pts</strong>
+                </div>
+                <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                  <span>Caso 3:</span> <strong className="text-slate-900">{sec3.caso3 ?? 0} pts</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* SECCION IV */}
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2">
+              <div className="flex justify-between font-semibold text-slate-800">
+                <span>Sección IV (Preguntas Abiertas)</span>
+                <span>Max: 3.0 pts</span>
+              </div>
+              <div className="space-y-1.5 text-slate-600">
+                <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                  <span>Reactivo A):</span> <strong className="text-slate-900">{sec4.a ?? 0} pts</strong>
+                </div>
+                <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                  <span>Reactivo B):</span> <strong className="text-slate-900">{sec4.b ?? 0} pts</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // PSICOLOGIA INDUSTRIAL BREAKDOWN
+    // =========================================================================
+    function PsicologiaBreakdown({ examen, proyecto }) {
+      if (!examen) return null;
+      const sec1 = examen.sec1 || {};
+      const sec2 = examen.sec2 || {};
+      const sec3 = examen.sec3 || {};
+      const sec4 = examen.sec4 || {};
+      const sec5 = examen.sec5 || {};
+
+      const projObj = typeof proyecto === 'object' ? proyecto : { c1: proyecto, c2: 0, c3: 0 };
+
+      return (
+        <div className="space-y-6">
+          {/* EXAMEN BREAKDOWN */}
+          <div className="space-y-4">
+            <h5 className="text-xs font-bold uppercase tracking-wider text-indigo-900 border-b border-slate-100 pb-2">
+              Examen 1 — Desglose Psicología Industrial (Total: 60%)
+            </h5>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+              {/* SEC I */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 space-y-1.5">
+                <div className="font-semibold text-slate-800">Sección I</div>
+                <div className="bg-white p-2 rounded border border-slate-200 flex justify-between">
+                  <span>Reactivo 1:</span> <strong className="text-slate-900">{sec1.r1 ?? 0} pts</strong>
+                </div>
+              </div>
+
+              {/* SEC II */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 space-y-1.5 md:col-span-2 lg:col-span-2">
+                <div className="font-semibold text-slate-800">Sección II (Reactivos 1 al 6)</div>
+                <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                  <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                    <span>R1:</span> <strong className="text-slate-900">{sec2.r1 ?? 0}</strong>
+                  </div>
+                  <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                    <span>R2:</span> <strong className="text-slate-900">{sec2.r2 ?? 0}</strong>
+                  </div>
+                  <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                    <span>R3:</span> <strong className="text-slate-900">{sec2.r3 ?? 0}</strong>
+                  </div>
+                  <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                    <span>R4:</span> <strong className="text-slate-900">{sec2.r4 ?? 0}</strong>
+                  </div>
+                  <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                    <span>R5:</span> <strong className="text-slate-900">{sec2.r5 ?? 0}</strong>
+                  </div>
+                  <div className="bg-white p-1.5 rounded border border-slate-200 flex justify-between">
+                    <span>R6:</span> <strong className="text-slate-900">{sec2.r6 ?? 0}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* SEC III */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 space-y-1.5">
+                <div className="font-semibold text-slate-800">Sección III</div>
+                <div className="bg-white p-2 rounded border border-slate-200 flex justify-between">
+                  <span>Reactivo 1:</span> <strong className="text-slate-900">{sec3.r1 ?? 0} pts</strong>
+                </div>
+              </div>
+
+              {/* SEC IV */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 space-y-1.5">
+                <div className="font-semibold text-slate-800">Sección IV</div>
+                <div className="bg-white p-2 rounded border border-slate-200 flex justify-between">
+                  <span>Reactivo 1:</span> <strong className="text-slate-900">{sec4.r1 ?? 0} pts</strong>
+                </div>
+              </div>
+
+              {/* SEC V */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 space-y-1.5 md:col-span-2 lg:col-span-1">
+                <div className="font-semibold text-slate-800">Sección V</div>
+                <div className="grid grid-cols-3 gap-1 text-[11px]">
+                  <div className="bg-white p-1 rounded border border-slate-200 flex justify-between">
+                    <span>R1:</span> <strong>{sec5.r1 ?? 0}</strong>
+                  </div>
+                  <div className="bg-white p-1 rounded border border-slate-200 flex justify-between">
+                    <span>R2:</span> <strong>{sec5.r2 ?? 0}</strong>
+                  </div>
+                  <div className="bg-white p-1 rounded border border-slate-200 flex justify-between">
+                    <span>R3:</span> <strong>{sec5.r3 ?? 0}</strong>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          {/* PROYECTO FINAL BREAKDOWN */}
+          <div className="space-y-3 pt-2">
+            <h5 className="text-xs font-bold uppercase tracking-wider text-indigo-900 border-b border-slate-100 pb-2">
+              Proyecto Final 1 — Desglose por Criterios (Total: 40%)
+            </h5>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex justify-between items-center">
+                <span className="text-slate-600 font-medium">Criterio 1:</span>
+                <span className="font-bold text-slate-900">{projObj.c1 ?? 0} pts</span>
+              </div>
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex justify-between items-center">
+                <span className="text-slate-600 font-medium">Criterio 2:</span>
+                <span className="font-bold text-slate-900">{projObj.c2 ?? 0} pts</span>
+              </div>
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex justify-between items-center">
+                <span className="text-slate-600 font-medium">Criterio 3:</span>
+                <span className="font-bold text-slate-900">{projObj.c3 ?? 0} pts</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // ADMIN PANEL COMPONENT
+    // =========================================================================
+    function AdminDashboard({ students, setStudents, adminTab, setAdminTab }) {
+      const [filterCareer, setFilterCareer] = useState('all');
+      const [importText, setImportText] = useState('');
+      const [importMessage, setImportMessage] = useState(null);
+
+      // Filtering students
+      const filteredStudents = useMemo(() => {
+        if (filterCareer === 'all') return students;
+        return students.filter(s => s.carrera === filterCareer);
+      }, [students, filterCareer]);
+
+      // Delete student
+      const handleDeleteStudent = (id) => {
+        if (window.confirm("¿Seguro que deseas eliminar este registro de alumno?")) {
+          setStudents(prev => prev.filter(s => s.id !== id));
+        }
+      };
+
+      // Reset to initial seed
+      const handleResetData = () => {
+        if (window.confirm("¿Deseas restaurar los alumnos con la información de demostración inicial? Se borrarán tus cambios.")) {
+          setStudents(INITIAL_STUDENTS);
+        }
+      };
+
+      // Generate Template CSV for Download
+      const downloadCSVTemplate = (carrera) => {
+        let headers = [];
+        let filename = "";
+
+        if (carrera === 'derecho_admin') {
+          headers = [
+            "Matricula", "Nombre", "Correo",
+            "Examen1_Sec1_R1", "Examen1_Sec1_R2", "Examen1_Sec1_R3", "Examen1_Sec1_R4",
+            "Examen1_Sec2",
+            "Examen1_Sec3_Caso1", "Examen1_Sec3_Caso2", "Examen1_Sec3_Caso3",
+            "Examen1_Sec4_A", "Examen1_Sec4_B",
+            "Proyecto1", "Extra1",
+            "Examen2", "Proyecto2", "Extra2"
+          ];
+          filename = "plantilla_calificaciones_derecho_admin.csv";
+        } else {
+          headers = [
+            "Matricula", "Nombre", "Correo",
+            "Examen1_Sec1_R1",
+            "Examen1_Sec2_R1", "Examen1_Sec2_R2", "Examen1_Sec2_R3", "Examen1_Sec2_R4", "Examen1_Sec2_R5", "Examen1_Sec2_R6",
+            "Examen1_Sec3_R1",
+            "Examen1_Sec4_R1",
+            "Examen1_Sec5_R1", "Examen1_Sec5_R2", "Examen1_Sec5_R3",
+            "Proyecto1_Crit1", "Proyecto1_Crit2", "Proyecto1_Crit3", "Extra1",
+            "Examen2", "Proyecto2", "Extra2"
+          ];
+          filename = "plantilla_calificaciones_psicologia_ind.csv";
+        }
+
+        const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n";
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+
+      // CSV Auto-Parse Import
+      const handleCSVImport = (careerType) => {
+        if (!importText.trim()) {
+          setImportMessage({ type: 'error', text: 'Por favor pega o carga el contenido en texto del CSV exportado de Google Sheets.' });
+          return;
+        }
+
+        Papa.parse(importText.trim(), {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => {
+            if (results.errors.length > 0 && results.data.length === 0) {
+              setImportMessage({ type: 'error', text: 'Error al interpretar el formato CSV. Revisa las columnas.' });
+              return;
+            }
+
+            try {
+              const newStudents = results.data.map((row, index) => {
+                const matricula = (row.Matricula || row.matricula || `EST-${index + 100}`).toString().trim();
+                const nombre = row.Nombre || row.nombre || "Alumno Importado";
+                const correo = (row.Correo || row.correo || `${matricula.toLowerCase()}@alumnos.edu.mx`).toString().trim();
+
+                if (careerType === 'derecho_admin') {
+                  return {
+                    id: `DER-IMP-${Date.now()}-${index}`,
+                    matricula,
+                    nombre,
+                    correo,
+                    carrera: 'derecho_admin',
+                    parcial1: {
+                      examen: {
+                        sec1: {
+                          r1: parseFloat(row.Examen1_Sec1_R1 || 0),
+                          r2: parseFloat(row.Examen1_Sec1_R2 || 0),
+                          r3: parseFloat(row.Examen1_Sec1_R3 || 0),
+                          r4: parseFloat(row.Examen1_Sec1_R4 || 0)
+                        },
+                        sec2: parseFloat(row.Examen1_Sec2 || 0),
+                        sec3: {
+                          caso1: parseFloat(row.Examen1_Sec3_Caso1 || 0),
+                          caso2: parseFloat(row.Examen1_Sec3_Caso2 || 0),
+                          caso3: parseFloat(row.Examen1_Sec3_Caso3 || 0)
+                        },
+                        sec4: {
+                          a: parseFloat(row.Examen1_Sec4_A || 0),
+                          b: parseFloat(row.Examen1_Sec4_B || 0)
+                        }
+                      },
+                      proyecto: parseFloat(row.Proyecto1 || 0),
+                      extra: parseFloat(row.Extra1 || 0)
+                    },
+                    parcial2: {
+                      examen: parseFloat(row.Examen2 || 0),
+                      proyecto: parseFloat(row.Proyecto2 || 0),
+                      extra: parseFloat(row.Extra2 || 0)
+                    }
+                  };
+                } else {
+                  // Psicologia
+                  return {
+                    id: `PSI-IMP-${Date.now()}-${index}`,
+                    matricula,
+                    nombre,
+                    correo,
+                    carrera: 'psicologia_ind',
+                    parcial1: {
+                      examen: {
+                        sec1: { r1: parseFloat(row.Examen1_Sec1_R1 || 0) },
+                        sec2: {
+                          r1: parseFloat(row.Examen1_Sec2_R1 || 0),
+                          r2: parseFloat(row.Examen1_Sec2_R2 || 0),
+                          r3: parseFloat(row.Examen1_Sec2_R3 || 0),
+                          r4: parseFloat(row.Examen1_Sec2_R4 || 0),
+                          r5: parseFloat(row.Examen1_Sec2_R5 || 0),
+                          r6: parseFloat(row.Examen1_Sec2_R6 || 0)
+                        },
+                        sec3: { r1: parseFloat(row.Examen1_Sec3_R1 || 0) },
+                        sec4: { r1: parseFloat(row.Examen1_Sec4_R1 || 0) },
+                        sec5: {
+                          r1: parseFloat(row.Examen1_Sec5_R1 || 0),
+                          r2: parseFloat(row.Examen1_Sec5_R2 || 0),
+                          r3: parseFloat(row.Examen1_Sec5_R3 || 0)
+                        }
+                      },
+                      proyecto: {
+                        c1: parseFloat(row.Proyecto1_Crit1 || 0),
+                        c2: parseFloat(row.Proyecto1_Crit2 || 0),
+                        c3: parseFloat(row.Proyecto1_Crit3 || 0)
+                      },
+                      extra: parseFloat(row.Extra1 || 0)
+                    },
+                    parcial2: {
+                      examen: parseFloat(row.Examen2 || 0),
+                      proyecto: parseFloat(row.Proyecto2 || 0),
+                      extra: parseFloat(row.Extra2 || 0)
+                    }
+                  };
+                }
+              });
+
+              setStudents(prev => [...prev, ...newStudents]);
+              setImportMessage({ type: 'success', text: `¡Se importaron con éxito ${newStudents.length} alumnos!` });
+              setImportText('');
+            } catch (err) {
+              setImportMessage({ type: 'error', text: 'Ocurrió un error al procesar las filas del CSV.' });
+            }
+          }
+        });
+      };
+
+      return (
+        <div className="space-y-6">
+          {/* ADMIN TITLE BAR */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Panel Docente — Gestión de Registros</h2>
+              <p className="text-xs text-slate-500">Carga la información desde tu Google Sheets para disponibilizarla a tus alumnos.</p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setAdminTab('list')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
+                  adminTab === 'list' ? 'bg-indigo-600 text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Ver Alumnos ({students.length})
+              </button>
+              <button
+                onClick={() => setAdminTab('import')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1 ${
+                  adminTab === 'import' ? 'bg-indigo-600 text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                <UploadIcon />
+                Cargar CSV / Google Sheets
+              </button>
+              <button
+                onClick={handleResetData}
+                className="px-3.5 py-2 rounded-xl text-xs font-medium text-rose-600 hover:bg-rose-50 border border-rose-200 transition"
+              >
+                Restaurar Datos Demo
+              </button>
+            </div>
+          </div>
+
+          {/* TAB 1: LIST OF ALL STUDENTS */}
+          {adminTab === 'list' && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-600">Filtrar por Carrera:</span>
+                  <select
+                    value={filterCareer}
+                    onChange={(e) => setFilterCareer(e.target.value)}
+                    className="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  >
+                    <option value="all">Todas las Carreras</option>
+                    <option value="derecho_admin">Derecho y Administración</option>
+                    <option value="psicologia_ind">Psicología Industrial</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-600 uppercase tracking-wider font-semibold">
+                    <tr>
+                      <th className="p-3">Matrícula</th>
+                      <th className="p-3">Nombre Completo</th>
+                      <th className="p-3">Carrera</th>
+                      <th className="p-3 text-center">Parcial 1</th>
+                      <th className="p-3 text-center">Parcial 2</th>
+                      <th className="p-3 text-center">Promedio</th>
+                      <th className="p-3 text-right">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                    {filteredStudents.length === 0 ? (
+                      <tr>
+                        <td colSpan="7" className="p-6 text-center text-slate-400">
+                          No hay alumnos registrados con el filtro seleccionado.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredStudents.map((s) => {
+                        const p1 = calculateParcial1(s);
+                        const p2 = calculateParcial2(s);
+                        const prom = calculatePromedioGlobal(s);
+                        return (
+                          <tr key={s.id} className="hover:bg-slate-50/80 transition">
+                            <td className="p-3 font-bold text-slate-900">{s.matricula}</td>
+                            <td className="p-3">
+                              <div>{s.nombre}</div>
+                              <div className="text-[10px] text-slate-400">{s.correo}</div>
+                            </td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                s.carrera === 'derecho_admin' ? 'bg-indigo-50 text-indigo-700' : 'bg-purple-50 text-purple-700'
+                              }`}>
+                                {s.carrera === 'derecho_admin' ? 'Derecho y Admón' : 'Psicología Ind.'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center font-bold">{p1.toFixed(2)}</td>
+                            <td className="p-3 text-center font-bold">{p2.toFixed(2)}</td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-1 rounded-lg font-bold ${
+                                prom >= 6.0 ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'
+                              }`}>
+                                {prom.toFixed(2)}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right">
+                              <button
+                                onClick={() => handleDeleteStudent(s.id)}
+                                className="text-rose-600 hover:text-rose-800 text-xs font-semibold px-2 py-1 rounded hover:bg-rose-50 transition"
+                              >
+                                Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: IMPORT CSV FROM GOOGLE SHEETS */}
+          {adminTab === 'import' && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Cargar Notas desde Google Sheets / CSV</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  1) Descarga la plantilla CSV acorde a tu asignatura. <br />
+                  2) Llena las filas en tu hoja de cálculo y expórtala como "Valores separados por comas (.csv)". <br />
+                  3) Pega aquí el contenido de texto generado y presiona importar.
+                </p>
+              </div>
+
+              {/* DOWNLOAD TEMPLATES ROW */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div className="flex flex-col justify-between space-y-2">
+                  <span className="text-xs font-bold text-slate-800">Plantilla Derecho y Administración</span>
+                  <p className="text-[11px] text-slate-500">Incluye columnas para Secciones I (4 reactivos), II, III (3 casos), IV (2 reactivos) y Proyecto 1.</p>
+                  <button
+                    onClick={() => downloadCSVTemplate('derecho_admin')}
+                    className="self-start text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold px-3 py-1.5 rounded-lg border border-indigo-200 flex items-center gap-1 transition"
+                  >
+                    <DownloadIcon /> Descargar CSV Derecho
+                  </button>
+                </div>
+
+                <div className="flex flex-col justify-between space-y-2">
+                  <span className="text-xs font-bold text-slate-800">Plantilla Psicología Industrial</span>
+                  <p className="text-[11px] text-slate-500">Incluye Secciones I a V, más Desglose de Proyecto Final por Criterios 1, 2 y 3.</p>
+                  <button
+                    onClick={() => downloadCSVTemplate('psicologia_ind')}
+                    className="self-start text-xs bg-purple-50 text-purple-700 hover:bg-purple-100 font-semibold px-3 py-1.5 rounded-lg border border-purple-200 flex items-center gap-1 transition"
+                  >
+                    <DownloadIcon /> Descargar CSV Psicología
+                  </button>
+                </div>
+              </div>
+
+              {/* TEXT AREA FOR IMPORT */}
+              <div className="space-y-3">
+                <label className="block text-xs font-semibold text-slate-800">
+                  Pega el contenido CSV formateado aquí:
+                </label>
+                <textarea
+                  rows="6"
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  placeholder={`Matricula,Nombre,Correo,Examen1_Sec1_R1,...\n20240901,Maria Lopez,maria@alumnos.edu.mx,0.5,...`}
+                  className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                ></textarea>
+
+                {importMessage && (
+                  <div className={`p-3 rounded-xl text-xs font-medium ${
+                    importMessage.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}>
+                    {importMessage.text}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-3 pt-2">
+                  <button
+                    onClick={() => handleCSVImport('derecho_admin')}
+                    className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow transition"
+                  >
+                    Procesar como Derecho y Admón
+                  </button>
+                  <button
+                    onClick={() => handleCSVImport('psicologia_ind')}
+                    className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs rounded-xl shadow transition"
+                  >
+                    Procesar como Psicología Industrial
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      );
+    }
+
+    // Render React App
+    const rootElement = document.getElementById('root');
+    const root = ReactDOM.createRoot(rootElement);
+    root.render(<App />);
+  </script>
+</body>
+</html>
