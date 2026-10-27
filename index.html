@@ -1337,6 +1337,74 @@
     const rootElement = document.getElementById('root');
     const root = ReactDOM.createRoot(rootElement);
     root.render(<App />);
+    // ==========================================
+// CONEXIÓN DIRECTA CON GOOGLE SHEETS
+// ==========================================
+
+// Reemplaza esta URL con la que te dio Google Apps Script al desplegar
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz78KzGC1ScRvlZY315L004BFdigGAPIjGXWpDzvUCvfuD0pp89VDJuZLoEweRk8i-h/exec";
+
+// Carga en segundo plano los datos desde Google Sheets cada vez que se busca un alumno
+async function obtenerDatosGoogleSheets() {
+  try {
+    const respuesta = await fetch(GOOGLE_SCRIPT_URL);
+    if (!respuesta.ok) throw new Error("Error en la respuesta de red");
+    
+    const datos = await respuesta.json();
+    if (Array.isArray(datos) && datos.length > 0) {
+      // Guarda copia en el almacenamiento local para respaldo
+      localStorage.setItem("alumnos_db", JSON.stringify(datos));
+      return datos;
+    }
+  } catch (err) {
+    console.warn("No se pudo conectar a Google Sheets. Usando datos guardados localmente.", err);
+  }
+  
+  const datosLocales = localStorage.getItem("alumnos_db");
+  return datosLocales ? JSON.parse(datosLocales) : [];
+}
+
+// Intercepta la consulta del alumno para traer la información más reciente de Sheets
+document.addEventListener("DOMContentLoaded", () => {
+  const btnBuscar = document.querySelector("button[onclick*='buscar']"), 
+        inputBusqueda = document.querySelector("input[type='text']");
+
+  if (btnBuscar && inputBusqueda) {
+    btnBuscar.onclick = async (e) => {
+      e.preventDefault();
+      const busqueda = inputBusqueda.value.trim().toLowerCase();
+      
+      if (!busqueda) {
+        alert("Por favor ingresa tu matrícula o correo.");
+        return;
+      }
+
+      // Despliega mensaje de carga temporal
+      const contenedorResultado = document.getElementById("resultado") || document.querySelector("main");
+      
+      const alumnosActualizados = await obtenerDatosGoogleSheets();
+      
+      // Busca coincidencia por matrícula o correo
+      const alumnoEncontrado = alumnosActualizados.find(a => 
+        String(a.matricula || a.Matricula || '').toLowerCase() === busqueda || 
+        String(a.correo || a.Correo || '').toLowerCase() === busqueda
+      );
+
+      if (alumnoEncontrado) {
+        // Renderiza los datos encontrados
+        if (typeof renderizarFicha === "function") {
+          renderizarFicha(alumnoEncontrado);
+        } else if (typeof mostrarResultado === "function") {
+          mostrarResultado(alumnoEncontrado);
+        } else {
+          location.reload(); // Recarga para actualizar con la base en localStorage
+        }
+      } else {
+        alert("No se encontró ningún alumno con la matrícula o correo ingresado.");
+      }
+    };
+  }
+});
   </script>
 </body>
 </html>
